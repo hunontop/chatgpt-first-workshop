@@ -62,10 +62,27 @@ footer{max-width:980px;margin:0 auto;padding:8px 16px 32px;color:var(--sub);font
   </div>
   <div class="card">
     <h2>2. 무엇을 가릴까</h2>
-    <div class="row muted">늘 가림: 주민·외국인등록번호 · 전화 · 이메일 · 카드 · 계좌 · 사업자등록번호 · 여권 · 운전면허</div>
+    <div class="row muted">번호·연락처 — 꺼 두면 그 종류는 가리지 않습니다</div>
+    <div class="row" id="ruleBox">
+      <label><input type="checkbox" class="rule" value="rrn" checked> 주민·외국인등록번호</label>
+      <label><input type="checkbox" class="rule" value="phone" checked> 전화</label>
+      <label><input type="checkbox" class="rule" value="email" checked> 이메일</label>
+      <label><input type="checkbox" class="rule" value="card" checked> 카드</label>
+      <label><input type="checkbox" class="rule" value="account" checked> 계좌</label>
+      <label><input type="checkbox" class="rule" value="brn" checked> 사업자등록번호</label>
+      <label><input type="checkbox" class="rule" value="passport" checked> 여권</label>
+      <label><input type="checkbox" class="rule" value="driver" checked> 운전면허</label>
+      <label><input type="checkbox" class="rule" value="crn"> 법인등록번호</label>
+      <label><input type="checkbox" class="rule" value="ip"> IP 주소</label>
+    </div>
+    <div class="row muted">글 속의 이름·주소 — 문맥을 보고 가립니다(놓칠 수 있어 가린 뒤 사람이 훑습니다)</div>
     <div class="row">
-      <label><input type="checkbox" id="rName" checked> 이름(문맥이 있을 때)</label>
-      <label><input type="checkbox" id="rAddr" checked> 주소(읍·면·동 이하)</label>
+      <label><input type="checkbox" class="rule" id="rName" value="name" checked> 이름(문맥이 있을 때)</label>
+      <label><input type="checkbox" class="rule" id="rAddr" value="address" checked> 주소(읍·면·동 이하)</label>
+    </div>
+    <div class="row">
+      <button type="button" id="ruleAll">모두 켜기</button> <button type="button" id="ruleDef">기본으로</button>
+      <label>가리는 글자 <select id="maskCh"><option>●</option><option>○</option><option>■</option><option>＊</option></select></label>
     </div>
     <div class="row">
       <label><input type="checkbox" id="pseudo" checked> 이름 열을 <b>가명 코드</b>로 바꾸기</label>
@@ -123,6 +140,12 @@ footer{max-width:980px;margin:0 auto;padding:8px 16px 32px;color:var(--sub);font
     <h2>3. 결과</h2>
     <textarea id="res3" readonly></textarea>
     <div class="row"><button class="sub" id="cp3">복사</button> <span class="muted" id="note3"></span></div>
+  </div>
+  <div class="card" id="out3b" hidden>
+    <h2>4. 발송 명단</h2>
+    <div class="row muted">붙여 넣은 답이 표일 때 — 이름 · 연락처 · 내용을 칸으로 나눈 명단입니다. 엑셀로 받거나, 복사해 엑셀에 붙여 넣습니다.</div>
+    <div class="tablewrap" id="res3b"></div>
+    <div class="row" style="margin-top:10px"><button class="act" id="dl3">엑셀로 받기</button> <button class="sub" id="cp3b">복사</button></div>
   </div>
 </section>
 
@@ -2563,9 +2586,18 @@ const $=id=>document.getElementById(id);
 const toast=t=>{const e=$("toast");e.textContent=t;e.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>e.classList.remove("on"),2500)};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function copy(text){
-  const done=()=>toast("복사했습니다");
-  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(done,()=>fallback())}else fallback();
-  function fallback(){const a=document.createElement("textarea");a.value=text;a.style.position="fixed";a.style.opacity="0";document.body.appendChild(a);a.select();try{document.execCommand("copy");done()}catch(e){toast("복사가 막혔습니다 — 직접 선택해 복사하세요")}document.body.removeChild(a)}
+  // 10-01 밤: 누른 그 순간에 먼저 복사한다. 예전에는 clipboard API가 거절된 뒤(누른 순간이 지난 뒤)에 예비 길로 갔는데,
+  // 그때는 복사가 조용히 실패하고도 "복사했습니다"가 떴다 — 붙여 넣으면 앞서 복사한 글(코드가 든 AI 답)이 나왔다.
+  const FAIL="복사가 막혔습니다 — 결과 칸을 눌러 Ctrl+A, Ctrl+C로 복사하세요";
+  let ok=false;
+  const a=document.createElement("textarea");a.value=text;a.setAttribute("readonly","");
+  a.style.cssText="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0";
+  document.body.appendChild(a);a.focus();a.select();a.setSelectionRange(0,text.length);
+  try{ok=document.execCommand("copy")}catch(e){ok=false}
+  document.body.removeChild(a);
+  if(ok){toast("복사했습니다");return}
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(text).then(()=>toast("복사했습니다"),()=>toast(FAIL));
+  else toast(FAIL);
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
@@ -2611,8 +2643,11 @@ $("f1").onchange=e=>{
     $("run1").disabled=false;$("out1").hidden=true;
   }).catch(err=>toast("파일을 읽지 못했습니다: "+err.message));
 };
-function rulesSel(){const r=["rrn","phone","email","card","account","brn","passport","driver"];if($("rName").checked)r.push("name");if($("rAddr").checked)r.push("address");return r}
-const RULE_KO={rrn:"주민·외국인등록번호",phone:"전화",email:"이메일",card:"카드",account:"계좌",brn:"사업자등록번호",passport:"여권",driver:"운전면허",name:"이름",address:"주소",pseudo:"가명 코드"};
+function rulesSel(){return [...document.querySelectorAll("input.rule")].filter(e=>e.checked).map(e=>e.value)}
+const RULE_DEF=new Set(["rrn","phone","email","card","account","brn","passport","driver","name","address"]);
+$("ruleAll").onclick=()=>document.querySelectorAll("input.rule").forEach(e=>e.checked=true);
+$("ruleDef").onclick=()=>document.querySelectorAll("input.rule").forEach(e=>e.checked=RULE_DEF.has(e.value));
+const RULE_KO={crn:"법인등록번호",ip:"IP 주소",rrn:"주민·외국인등록번호",phone:"전화",email:"이메일",card:"카드",account:"계좌",brn:"사업자등록번호",passport:"여권",driver:"운전면허",name:"이름",address:"주소",pseudo:"가명 코드"};
 
 $("run1").onclick=()=>{
   if(!book)return;
@@ -2634,7 +2669,7 @@ $("run1").onclick=()=>{
           row[C]=codeOf.get(v);mk[C]=true;counts.pseudo=(counts.pseudo||0)+1;continue;
         }
         const h=(head[C]||"").trim();const pre=h?h+" ":"";
-        const res=KR.redactText(pre+v,{rules});
+        const res=KR.redactText(pre+v,{rules,maskChar:$("maskCh").value});
         const hits=res.hits.filter(x=>x.index+x.length>pre.length);
         if(hits.length){row[C]=res.text.slice(pre.length);mk[C]=true;hits.forEach(x=>counts[x.rule]=(counts[x.rule]||0)+1)}
       }
@@ -2655,7 +2690,7 @@ $("run1").onclick=()=>{
   $("sum1").innerHTML=`<div>가린 칸: ${pills}</div>`+(usePseudo?`<div class="muted">가명 코드 ${codeOf.size}명 — 같은 사람은 같은 코드입니다.</div>`:"");
   $("longCols").textContent=[...longCols].join(", ")||"없음";
   const p=result.preview;let html="<table><thead><tr>"+p.head.map(h=>`<th>${esc(h)}</th>`).join("")+"</tr></thead><tbody>";
-  for(let R=1;R<p.out.length;R++){html+="<tr>"+p.out[R].map((v,C)=>{const t=esc(v).replace(/[●]+/g,m=>`<mark>${m}</mark>`);const cls=(v||"").length>30?' class="long"':"";return `<td${cls}>${p.marks[R][C]&&!/●/.test(v)?`<mark>${esc(v)}</mark>`:t}</td>`}).join("")+"</tr>"}
+  for(let R=1;R<p.out.length;R++){html+="<tr>"+p.out[R].map((v,C)=>{const t=esc(v).replace(/[●○■＊]+/g,m=>`<mark>${m}</mark>`);const cls=(v||"").length>30?' class="long"':"";return `<td${cls}>${p.marks[R][C]&&!/●/.test(v)?`<mark>${esc(v)}</mark>`:t}</td>`}).join("")+"</tr>"}
   $("prev1").innerHTML=html+"</tbody></table>";
   $("dlMap").disabled=mapRows.length<2;$("out1").hidden=false;
   window.__map=mapRows;
@@ -2728,7 +2763,26 @@ $("run3").onclick=()=>{
   const re=new RegExp(codes.join("|"),"g");
   const out=$("paste3").value.replace(re,c=>{hit++;const r=byCode.get(c);return withPhone&&r[2]?`${r[1]}(${r[2]})`:r[1]});
   $("res3").value=out;$("note3").textContent=`코드 ${hit}곳을 이름으로 바꿨습니다.`;$("out3").hidden=false;
+  // 발송 명단(2026-10-02) — 붙여 넣은 답이 표이고 한 열이 코드면, 이름·연락처를 칸으로 나눈 표를 따로 만든다
+  LIST3=null;$("out3b").hidden=true;
+  const tb=parsePasted($("paste3").value);
+  if(tb&&tb.head&&tb.rows.length){
+    const exact=new RegExp("^(?:"+codes.join("|")+")$");const isCode=v=>exact.test(String(v||"").trim());
+    let ci=-1,best=0;tb.head.forEach((_,c)=>{const k=tb.rows.filter(r=>isCode(r[c])).length;if(k>best){best=k;ci=c}});
+    if(ci>=0){
+      const rest=tb.head.map((_,c)=>c).filter(c=>c!==ci);
+      const head=["이름","연락처",...rest.map(c=>tb.head[c])];
+      const rows=tb.rows.filter(r=>isCode(r[ci])).map(r=>{const m=byCode.get(String(r[ci]).trim());
+        return [m[1],m[2]||"",...rest.map(c=>String(r[c]||"").replace(re,k=>byCode.get(k)[1]))]});
+      LIST3={head,rows};
+      $("res3b").innerHTML="<table><thead><tr>"+head.map(x=>`<th>${esc(x)}</th>`).join("")+"</tr></thead><tbody>"+rows.map(r=>"<tr>"+r.map(v=>`<td>${esc(v)}</td>`).join("")+"</tr>").join("")+"</tbody></table>";
+      $("out3b").hidden=false;
+    }
+  }
 };
+let LIST3=null;
+$("dl3").onclick=()=>{if(!LIST3)return;const b=XLSX.utils.book_new();XLSX.utils.book_append_sheet(b,XLSX.utils.aoa_to_sheet([LIST3.head,...LIST3.rows]),"발송명단");XLSX.writeFile(b,"발송명단.xlsx")};
+$("cp3b").onclick=()=>{if(!LIST3)return;const c=s=>String(s).replace(/[\t\n]/g," ");copy([LIST3.head,...LIST3.rows].map(r=>r.map(c).join("\t")).join("\n"))};
 $("cp3").onclick=()=>copy($("res3").value);
 })();
 </script>
