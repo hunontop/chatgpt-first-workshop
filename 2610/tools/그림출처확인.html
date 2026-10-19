@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>그림 출처 확인</title>
+<!-- 2026-10-19 · 그림 파일에 들어 있는 콘텐츠 자격 증명(C2PA)과 XMP 기록을 읽어 누가 어떤 도구로 만들었는지 보여 준다.
+     파일은 이 브라우저 안에서만 읽는다(어디에도 올리지 않는다). 인터넷이 없어도 된다. -->
+<style>
+:root{--ink:#16213a;--sub:#5b6478;--bg:#f3f5f9;--card:#fff;--line:#dfe4ee;--navy:#0E2955;--blue:#216CED;--wash:#eaf1fe;--ok:#0f7a4a;--warn:#9a5b00}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ink:#e8ecf4;--sub:#9aa3b5;--bg:#0f1420;--card:#171e2d;--line:#2a3345;--navy:#9cb8ff;--blue:#6ea0ff;--wash:#1c2940;--ok:#5fd39b;--warn:#f0b35a}}
+:root[data-theme="dark"]{--ink:#e8ecf4;--sub:#9aa3b5;--bg:#0f1420;--card:#171e2d;--line:#2a3345;--navy:#9cb8ff;--blue:#6ea0ff;--wash:#1c2940;--ok:#5fd39b;--warn:#f0b35a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Pretendard","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px;color:var(--navy)}
+.lead{margin:0 0 18px;color:var(--sub);font-size:15px}
+#drop{display:block;border:2px dashed var(--blue);border-radius:14px;background:var(--card);padding:34px 16px;text-align:center;cursor:pointer}
+#drop.on{background:var(--wash)}
+#drop b{color:var(--blue)}
+#drop small{display:block;margin-top:6px;color:var(--sub)}
+#file{display:none}
+.res{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.res .top{display:flex;gap:14px;align-items:center;padding:14px;border-bottom:1px solid var(--line)}
+.res img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:none}
+.res .name{font-weight:700;word-break:break-all}
+.res .verdict{margin-top:4px;font-weight:700}
+.verdict.ai{color:var(--ok)} .verdict.none{color:var(--warn)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top;font-size:15px}
+th{width:34%;color:var(--sub);font-weight:600}
+tr:last-child th,tr:last-child td{border-bottom:0}
+.note{margin-top:18px;padding:12px 14px;background:var(--wash);border-radius:10px;font-size:14px;color:var(--ink)}
+.note li{margin:2px 0}
+footer{margin-top:22px;color:var(--sub);font-size:13px}
+</style></head>
+<body><main>
+<h1>그림 출처 확인</h1>
+<p class="lead">AI로 만든 그림에 남은 기록(콘텐츠 자격 증명 · C2PA)을 읽어 누가 어떤 도구로 만들었는지 보여 줍니다. 파일은 이 브라우저 안에서만 읽고, 어디에도 올리지 않습니다.</p>
+<label id="drop" for="file"><b>그림 파일을 여기에 끌어다 놓거나 눌러서 고르세요</b><small>PNG · JPG · WEBP · 여러 장도 됩니다</small></label>
+<input id="file" type="file" accept="image/*" multiple>
+<div id="out"></div>
+<div class="note"><b>읽는 법</b><ul>
+<li><b>기록이 있으면</b> AI로 만든 그림이 맞습니다. 만든 곳과 도구가 함께 나옵니다.</li>
+<li><b>기록이 없다고 사람이 만든 것은 아닙니다.</b> 화면 캡처, 메신저 전송, 편집 프로그램에서 다시 저장하면 기록이 지워집니다.</li>
+<li>구글 제미나이는 눈에 보이지 않는 워터마크(SynthID)를 따로 씁니다. 그 워터마크는 이 페이지로 확인되지 않습니다.</li>
+<li>이 페이지는 기록을 <b>읽기만</b> 합니다. 서명이 진짜인지(위조 여부)까지 확인하지는 않습니다.</li>
+</ul></div>
+<footer>만든 사람: 최상훈 · choihunontop@gmail.com</footer>
+</main>
+<script>
+// 바이트 배열에서 문자열(라틴1) 위치를 찾는다
+function find(b, s, from){ const n=s.length; outer: for(let i=from||0;i<=b.length-n;i++){ for(let j=0;j<n;j++){ if(b[i+j]!==s.charCodeAt(j)) continue outer; } return i; } return -1; }
+// CBOR 글자열 하나를 읽는다(머리 바이트 0x60~0x7B)
+function cborText(b, i){ const h=b[i]; let len, p;
+  if(h>=0x60&&h<=0x77){len=h-0x60;p=i+1;} else if(h===0x78){len=b[i+1];p=i+2;} else if(h===0x79){len=(b[i+1]<<8)|b[i+2];p=i+3;} else return null;
+  if(p+len>b.length) return null; return new TextDecoder().decode(b.slice(p,p+len)); }
+// key 다음에 오는 값(글자열). CBOR 키는 글자열이라 key 앞에 머리 바이트가 붙는다 → key 끝 바로 뒤가 값의 머리 바이트
+function valAfter(b, key, from){ let i=from||0; for(let k=0;k<50;k++){ i=find(b,key,i); if(i<0) return null; let j=i+key.length; if(b[j]===0xC0) j++; const v=cborText(b,j); if(v) return {v:v, at:i}; i+=key.length; } return null; }
+function readAll(b){
+  const r={c2pa:false, gen:null, agent:null, ver:null, src:null, when:null, actions:[], xmp:null, google:false};
+  r.c2pa = find(b,'c2pa')>=0 && (find(b,'jumd')>=0 || find(b,'caBX')>=0);
+  const cg=find(b,'claim_generator_info'); if(cg>=0){ const n=valAfter(b,'name',cg); if(n&&n.v) r.gen=n.v; }
+  if(!r.gen){ const g=valAfter(b,'claim_generator'); if(g&&g.v) r.gen=g.v; }
+  const sa=find(b,'softwareAgent'); if(sa>=0){ const n=valAfter(b,'name',sa); if(n&&n.v) r.agent=n.v; const v=valAfter(b,'version',sa); if(v&&v.v&&v.at-sa<200) r.ver=v.v; }
+  const m=['compositeWithTrainedAlgorithmicMedia','trainedAlgorithmicMedia','algorithmicMedia','compositeSynthetic'];
+  for(const k of m){ if(find(b,k)>=0){ r.src=k; break; } }
+  const w=valAfter(b,'when'); if(w&&w.v) r.when=w.v;
+  for(const a of ['c2pa.created','c2pa.edited','c2pa.converted','c2pa.watermarked','c2pa.opened','c2pa.placed','c2pa.resized','c2pa.cropped']){ if(find(b,a)>=0) r.actions.push(a.replace('c2pa.','')); }
+  const x=find(b,'<x:xmpmeta'); if(x>=0){ const e=find(b,'</x:xmpmeta>',x); r.xmp=new TextDecoder().decode(b.slice(x, e>0?e+12:x+20000)); }
+  r.google = find(b,'Made with Google AI')>=0 || find(b,'Google AI')>=0;
+  return r;
+}
+const SRC={trainedAlgorithmicMedia:'AI가 처음부터 만든 그림',compositeWithTrainedAlgorithmicMedia:'AI로 만든 부분이 섞인 그림',algorithmicMedia:'프로그램이 만든 그림',compositeSynthetic:'합성한 그림'};
+const ACT={created:'만듦',edited:'편집',converted:'형식 변환',watermarked:'워터마크',opened:'열기',placed:'붙여 넣기',resized:'크기 변경',cropped:'자르기'};
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function fmtWhen(s){ const d=new Date(s); if(isNaN(d)) return s; return d.toLocaleString('ko-KR',{dateStyle:'long',timeStyle:'short'})+' (한국 시각)'; }
+async function show(f){
+  const b=new Uint8Array(await f.arrayBuffer()); const r=readAll(b);
+  let srcXmp=null; if(r.xmp){ const m=r.xmp.match(/DigitalSourceType[^>]*?(?:>|=")[^<"]*?(trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia)/); if(m) srcXmp=m[1]; }
+  const src=r.src||srcXmp; const has=r.c2pa||!!src||r.google;
+  const rows=[];
+  if(r.gen) rows.push(['만든 곳(서명한 곳)', r.gen]);
+  if(r.agent||r.ver) rows.push(['도구 · 모델', [r.agent,r.ver].filter(Boolean).join(' · ')]);
+  if(src) rows.push(['출처 유형', (SRC[src]||src)+' ('+src+')']);
+  if(r.when) rows.push(['만든 시각', fmtWhen(r.when)]);
+  if(r.actions.length) rows.push(['기록된 작업', r.actions.map(a=>ACT[a]||a).join(' · ')]);
+  if(r.google) rows.push(['표기', 'Google AI로 만들었다는 표기가 있습니다']);
+  rows.push(['기록 방식', r.c2pa?'콘텐츠 자격 증명(C2PA)':(srcXmp||r.google?'XMP 메타데이터':'없음')]);
+  rows.push(['파일', f.type+' · '+(f.size/1024/1024).toFixed(2)+'MB']);
+  const url=URL.createObjectURL(f);
+  const v=has?'<div class="verdict ai">AI로 만들었다는 기록이 있습니다</div>':'<div class="verdict none">기록이 없습니다 — 사람이 만들었다는 뜻은 아닙니다</div>';
+  const el=document.createElement('div'); el.className='res';
+  el.innerHTML='<div class="top"><img alt="" src="'+url+'"><div><div class="name">'+esc(f.name)+'</div>'+v+'</div></div><table>'+rows.map(([k,x])=>'<tr><th>'+esc(k)+'</th><td>'+esc(x)+'</td></tr>').join('')+'</table>';
+  document.getElementById('out').prepend(el);
+}
+const drop=document.getElementById('drop'), inp=document.getElementById('file');
+inp.addEventListener('change',()=>{[...inp.files].forEach(show); inp.value='';});
+['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('on')}));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('on')}));
+drop.addEventListener('drop',e=>[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')).forEach(show));
+</script></body></html>
