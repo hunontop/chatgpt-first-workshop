@@ -17,6 +17,13 @@ button{border:1px solid var(--navy);background:#fff;color:var(--navy);border-rad
 button.main{background:var(--navy);color:#fff}
 button:disabled{opacity:.4;cursor:default}
 .hint{color:var(--sub);font-size:13px}
+/* 2026-11-20 사용자: 글꼴 · 글자 크기 고치기 — 숫자와 글씨를 따로 */
+.tune{display:flex;flex-wrap:wrap;gap:14px 18px;align-items:center;background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 10px}
+.tune label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub)}
+.tune select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:14px inherit;background:#fff;color:var(--ink)}
+.tune input[type=range]{width:120px}
+.tune b{font-weight:700;color:var(--ink);min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.tune button{padding:5px 10px;font-size:13px}
 .stage{background:#fff;border:1px dashed #b8c0cf;border-radius:8px;overflow:auto;min-height:120px}
 iframe{border:0;width:100%;display:block;background:#fff}
 .empty{padding:40px;text-align:center;color:var(--sub)}
@@ -32,6 +39,20 @@ footer{max-width:1000px;margin:0 auto;padding:4px 16px 24px;color:var(--sub);fon
 <div class="box"><h2>2 그림으로</h2>
 <div class="row" style="margin:0 0 10px"><button id="copy" class="main" type="button" disabled>그림 복사</button><button id="png" type="button" disabled>PNG 내려받기</button><button id="save" type="button" disabled>HTML 저장</button>
 <span class="hint">그림 복사 → 한글에서 Ctrl+V · 복사가 막히면 PNG 내려받기 → 한글 [입력] → [그림]</span></div>
+<div class="tune">
+  <label>글꼴 <select id="font">
+    <option value="">그대로</option>
+    <option value="맑은 고딕">맑은 고딕</option>
+    <option value="돋움">돋움</option>
+    <option value="굴림">굴림</option>
+    <option value="바탕">바탕</option>
+    <option value="함초롬돋움">함초롬돋움 (한글 글꼴)</option>
+  </select></label>
+  <label>글씨 크기 <input id="szTxt" type="range" min="60" max="200" step="5" value="100"><b id="szTxtV">100%</b></label>
+  <label>숫자 크기 <input id="szNum" type="range" min="60" max="200" step="5" value="100"><b id="szNumV">100%</b></label>
+  <button id="reset" type="button">처음으로</button>
+  <span class="hint">글씨 = 제목 · 항목 이름 · 범례 · 숫자 = 눈금과 값</span>
+</div>
 <div class="stage" id="stage"><div class="empty">코드를 붙여 넣으면 여기에 차트가 나옵니다</div></div></div>
 </main>
 <footer>만든 사람: 최상훈 · choihunontop@gmail.com · 그림 만들기에 html2canvas 1.4.1(MIT)을 씁니다.</footer>
@@ -75,10 +96,46 @@ function draw(){
   frame.onload = () => {
     const d = frame.contentDocument; d.body.style.margin = d.body.style.margin || '0';
     const el = target(); frame.style.height = (d.documentElement.scrollHeight + 4) + 'px';
+    mark(d); tune();   // 글꼴 · 크기는 다시 그려도 고른 그대로 간다(11-20)
     const r = el.getBoundingClientRect();
     $('#info').textContent = `차트 크기 ${Math.round(r.width)} × ${Math.round(r.height)}px · 한글에서 약 ${(r.width/96*2.54).toFixed(1)}cm 폭`;
     if (/<script/i.test(code)) $('#info').textContent += ' · 코드 안의 스크립트는 돌리지 않습니다';
   };
+}
+/* ── 글꼴 · 글자 크기(2026-11-20 사용자) ──────────────────────────────
+   차트는 남이 만든 HTML이라 고칠 자리가 정해져 있지 않다. 그래서 그린 뒤에
+   글이 든 요소를 하나씩 훑어 「숫자만 든 요소」와 「글씨가 든 요소」로 나누고,
+   처음 크기를 적어 둔 다음 비율로 다시 매긴다. 원래 코드는 건드리지 않는다. */
+const FONTS = {"맑은 고딕": '"Malgun Gothic","맑은 고딕",sans-serif', "돋움": 'Dotum,돋움,sans-serif',
+               "굴림": 'Gulim,굴림,sans-serif', "바탕": 'Batang,바탕,serif',
+               "함초롬돋움": '"HCR Dotum",함초롬돋움,"Malgun Gothic",sans-serif'};
+const NUMY = /^[\s\d.,%+\-−~()₩$]*\d[\s\d.,%+\-−~()₩$]*(%|원|명|건|개|배|위|년|월|일|회|시간|분|초|천|만|억|톤|kg|km|kW|MW|GWh|㎡|℃)?$/;
+function mark(d){   // 글이 든 요소마다 숫자 · 글씨를 가르고 처음 크기를 적어 둔다
+  const w = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT), seen = new Set();
+  let n; while ((n = w.nextNode())) { if (n.nodeValue.trim() && n.parentElement) seen.add(n.parentElement); }
+  seen.forEach(e => {
+    const own = [...e.childNodes].filter(x => x.nodeType === 3).map(x => x.nodeValue).join('').trim();
+    if (!own) return;
+    e.setAttribute('data-cv', NUMY.test(own) ? 'num' : 'txt');
+    if (!e.hasAttribute('data-cv-base'))
+      e.setAttribute('data-cv-base', parseFloat(d.defaultView.getComputedStyle(e).fontSize) || 14);
+  });
+}
+function tune(){    // 고른 글꼴 · 비율을 그려 둔 차트에 입힌다
+  const d = frame && frame.contentDocument; if (!d || !d.body) return;
+  $('#szTxtV').textContent = $('#szTxt').value + '%';
+  $('#szNumV').textContent = $('#szNum').value + '%';
+  const fam = FONTS[$('#font').value] || '';
+  let s = d.getElementById('cv-font');
+  if (!s) { s = d.createElement('style'); s.id = 'cv-font'; (d.head || d.documentElement).appendChild(s); }
+  s.textContent = fam ? `*{font-family:${fam} !important}` : '';
+  const r = {txt: +$('#szTxt').value / 100, num: +$('#szNum').value / 100};
+  d.querySelectorAll('[data-cv-base]').forEach(e => {
+    const base = +e.getAttribute('data-cv-base'), k = r[e.getAttribute('data-cv')] || 1;
+    if (k === 1) e.style.removeProperty('font-size');
+    else e.style.setProperty('font-size', (base * k).toFixed(1) + 'px', 'important');
+  });
+  if (frame) frame.style.height = (d.documentElement.scrollHeight + 4) + 'px';
 }
 function target(){   // 차트 카드 하나를 찍는다 — body에 자식이 하나면 그것, 아니면 body
   const b = frame.contentDocument.body, kids = [...b.children].filter(e => !/^(script|style)$/i.test(e.tagName));
@@ -100,6 +157,8 @@ async function withDpi(blob, dpi){
   return new Blob([out], {type: 'image/png'});
 }
 const blobOf = c => new Promise(r => c.toBlob(r, 'image/png'));
+['font','szTxt','szNum'].forEach(id => $('#'+id).addEventListener('input', tune));
+$('#reset').onclick = () => { $('#font').value = ''; $('#szTxt').value = 100; $('#szNum').value = 100; tune(); };
 $('#src').addEventListener('input', draw);
 $('#clear').onclick = () => { $('#src').value = ''; draw(); };
 $('#copy').onclick = async () => {
@@ -112,7 +171,10 @@ $('#png').onclick = async () => {
   a.href = URL.createObjectURL(b); a.download = '차트.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 };
 $('#save').onclick = () => {
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([clean($('#src').value)], {type: 'text/html'}));
+  // 11-20: 글꼴 · 크기를 고쳤으면 고친 그대로 저장한다(못 읽으면 붙여 넣은 코드 그대로)
+  let html = clean($('#src').value);
+  try { if (frame && frame.contentDocument) html = frame.contentDocument.documentElement.outerHTML; } catch (e) {}
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
   a.download = '차트.html'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 };
 </script></body></html>
